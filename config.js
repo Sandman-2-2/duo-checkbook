@@ -7,7 +7,7 @@
 window.DUO_CONFIG = {
   appVersion: '2.0.0',
   endpoints: {
-    live: '',
+    live: 'https://script.google.com/macros/s/AKfycbzlhAbVt32lYCiR9VvUfJd0e60MHkLqy7pI7r_Ycsd8_cSjVJchWk38xNBpLsFgggne/exec',
     test: ''
   },
   // Width (in CSS pixels) at which the two-panel "unfolded" layout turns on.
