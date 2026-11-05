@@ -1,0 +1,35 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+  <meta name="theme-color" content="#f4f6fa" id="themeColor">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-title" content="Checkbook">
+  <meta name="apple-mobile-web-app-status-bar-style" content="default">
+  <meta name="description" content="Duo Checkbook: a private checkbook that syncs to your own Google Sheet.">
+  <title>Duo Checkbook</title>
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="icon" href="icon-192.png">
+  <link rel="apple-touch-icon" href="icon-180.png">
+  <link rel="stylesheet" href="styles.css">
+  <script>
+    (function () {
+      var t = 'system';
+      try { t = localStorage.getItem('duo-theme') || 'system'; } catch (e) {}
+      var dark = t === 'dark' || (t === 'system' && window.matchMedia && matchMedia('(prefers-color-scheme: dark)').matches);
+      document.documentElement.dataset.theme = dark ? 'dark' : 'light';
+    })();
+  </script>
+  <script src="config.js"></script>
+  <script src="app.js" defer></script>
+</head>
+<body>
+  <div id="app" class="app"><div class="boot">Loading your checkbook…</div></div>
+  <div id="sheetHost"></div>
+  <div id="toastHost" aria-live="polite"></div>
+  <div id="banner"></div>
+  <noscript><p style="padding:24px">Duo Checkbook needs JavaScript turned on.</p></noscript>
+</body>
+</html>
