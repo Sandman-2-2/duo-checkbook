@@ -509,10 +509,8 @@ function acctHeadHTML(a) {
       <span class="accthead-name">${logoImg(a.logo, 'head-logo')}${esc(a.name)}</span>
       <button class="iconbtn light" data-act="editAccount" data-id="${esc(a.id)}" aria-label="Edit account">${ICON.edit}</button>
     </div>
-    <div class="stats">
-      <div><small>Cleared</small><strong>${money(cleared)}</strong></div>
-      <div><small>Outstanding</small><strong>${money(bal - cleared)}</strong></div>
-      <div><small>Balance</small><strong>${money(bal)}</strong></div>
+    <div class="bigbal"><small>Balance</small><strong>${money(bal)}</strong>
+      ${bal !== cleared ? `<span class="subbal">Bank shows ${money(cleared)} · ${money(Math.abs(bal - cleared))} not cleared yet</span>` : ''}
     </div>
     <div class="statusrow light">${statusPill()}</div>
   </div>`;

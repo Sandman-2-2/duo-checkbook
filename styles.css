@@ -90,6 +90,10 @@ code { background: var(--surface-2); padding: 1px 5px; border-radius: 6px; font-
 .accthead-top { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
 .accthead-name { display: flex; align-items: center; gap: 9px; font-weight: 700; font-size: 19px; letter-spacing: -.4px; min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
 .head-logo { width: 32px; height: 32px; object-fit: contain; border-radius: 9px; background: #ffffffee; padding: 3px; flex-shrink: 0; }
+.bigbal { text-align: center; margin-top: 16px; }
+.bigbal small { display: block; font-size: 12.5px; opacity: .85; font-weight: 600; letter-spacing: .02em; }
+.bigbal strong { display: block; font-size: 38px; font-weight: 780; letter-spacing: -1.2px; margin-top: 2px; }
+.subbal { display: block; font-size: 12.5px; opacity: .85; margin-top: 4px; }
 .stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; text-align: center; margin-top: 22px; }
 .stats small { display: block; font-size: 11.5px; opacity: .85; margin-bottom: 6px; }
 .stats strong { font-size: 17px; letter-spacing: -.4px; }
