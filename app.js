@@ -87,6 +87,7 @@ const ICON = {
   swap: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="m17 3 4 4-4 4M21 7H8M7 21l-4-4 4-4M3 17h13"/></svg>',
   minus: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M5 12h14"/></svg>',
   filter: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M3 5h18l-7 8v6l-4-2v-4Z"/></svg>',
+  check: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="m5 12.5 4.5 4.5L19 7.5"/></svg>',
   cloud: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M7 18a5 5 0 1 1 1-9.9A6 6 0 0 1 19.5 10 4 4 0 0 1 18 18Z"/></svg>'
 };
 
@@ -750,7 +751,7 @@ async function restoreTx(id) {
 function sheetShell(title, body) {
   return `<div class="sheetback" data-act="sheetBackdrop"><div class="sheet" id="sheet" role="dialog" aria-modal="true" aria-label="${esc(title)}">
     <div class="sheet-grab"><div class="handle"></div>
-      <div class="sheet-title"><button class="linkbtn" data-act="closeSheet">Cancel</button><h2>${esc(title)}</h2><span class="spacer"></span></div>
+      <div class="sheet-title"><button class="linkbtn" data-act="closeSheet">Cancel</button><h2>${esc(title)}</h2><button class="confirm" data-act="saveSheet" aria-label="Save">${ICON.check}</button></div>
     </div>${body}</div></div>`;
 }
 function closeSheet(force = false) {
@@ -1156,6 +1157,7 @@ const ACT = {
     draft = newDraft('expense'); mountEntry($('#entryPanel')); renderLedger();
   },
   closeSheet: () => closeSheet(),
+  saveSheet() { if (sheetKind === 'entry') saveEntry(); else if (sheetKind === 'account') saveAccount(); },
   sheetBackdrop: (el, e) => { if (e.target === el) closeSheet(); },
   toggleFilters() { filt.open = !filt.open; $('#filters').classList.toggle('hidden', !filt.open); $('[data-act="toggleFilters"]').classList.toggle('on', filt.open); },
   filterType(el) { filt.type = el.dataset.type; $$('[data-act="filterType"]').forEach(b => b.classList.toggle('on', b === el)); renderLedger(); },
