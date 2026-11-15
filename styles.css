@@ -200,6 +200,12 @@ code { background: var(--surface-2); padding: 1px 5px; border-radius: 6px; font-
   display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
 .ptile.has-logo { background: #fff; padding: 8px; }
 .ptile.has-logo img { width: 100%; height: 100%; object-fit: contain; border-radius: 8px; }
+/* Name caption under the icon (suggestion tiles and the editor preview) */
+.ptile.has-logo:has(.pname) { display: flex; flex-direction: column; align-items: stretch; gap: 3px; padding: 7px 5px 5px; }
+.ptile.has-logo:has(.pname) img { flex: 1; min-height: 0; height: auto; }
+.pname { font-style: normal; font-size: 10.5px; font-weight: 700; line-height: 1.2; color: #1f2937; text-align: center;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis; flex-shrink: 0; }
+.ptile.big .pname { font-size: 12px; }
 .ptile.static { display: inline-grid; flex-shrink: 0; }
 .ptile.small { width: 46px; height: 46px; border-radius: 12px; padding: 3px; }
 .ptile.small.has-logo { padding: 4px; }
