@@ -8,8 +8,8 @@
 
 /* ───────────── Config ───────────── */
 const CFG = window.DUO_CONFIG || { endpoints: {} };
-const APP_VERSION = CFG.appVersion || '2.0.0';
-const API_VERSION = 2;
+const APP_VERSION = '2.1.0';
+const API_VERSION = 3;
 const LS = {
   get(k) { try { return localStorage.getItem(k); } catch (e) { return null; } },
   set(k, v) { try { localStorage.setItem(k, v); } catch (e) {} }
@@ -17,7 +17,7 @@ const LS = {
 const ENV = LS.get('duo-env') === 'test' ? 'test' : 'live';
 const DB_NAME = 'duo-checkbook-' + ENV;
 const WIDE_MQ = matchMedia('(min-width: ' + (Number(CFG.widePanelMinWidth) || 760) + 'px)');
-const STORE = { tx: 'transactions', acct: 'accounts', cat: 'categories' };
+const STORE = { tx: 'transactions', acct: 'accounts', cat: 'categories', payee: 'payees' };
 
 const DEFAULT_CATEGORIES = [
   ['cat-groceries', 'Groceries', 'expense'], ['cat-dining', 'Dining Out', 'expense'],
@@ -95,14 +95,17 @@ const ICON = {
 let db;
 function openDB() {
   return new Promise((resolve, reject) => {
-    const r = indexedDB.open(DB_NAME, 1);
+    const r = indexedDB.open(DB_NAME, 2);
     r.onupgradeneeded = () => {
+      // Adds any missing store; existing data (including waiting changes) is kept.
       const d = r.result;
-      d.createObjectStore('meta', { keyPath: 'k' });
-      d.createObjectStore('accounts', { keyPath: 'id' });
-      d.createObjectStore('categories', { keyPath: 'id' });
-      d.createObjectStore('transactions', { keyPath: 'id' });
-      d.createObjectStore('outbox', { keyPath: 'mutationId' });
+      const make = (name, keyPath) => { if (!d.objectStoreNames.contains(name)) d.createObjectStore(name, { keyPath }); };
+      make('meta', 'k');
+      make('accounts', 'id');
+      make('categories', 'id');
+      make('transactions', 'id');
+      make('outbox', 'mutationId');
+      make('payees', 'id');
     };
     r.onsuccess = () => resolve(r.result);
     r.onerror = () => reject(r.error);
@@ -132,18 +135,19 @@ function idbWrite(ops) {
 }
 
 /* ───────────── State ───────────── */
-const S = { accounts: new Map(), categories: new Map(), tx: new Map(), outbox: [], meta: {} };
-const MAP = { tx: S.tx, acct: S.accounts, cat: S.categories };
+const S = { accounts: new Map(), categories: new Map(), tx: new Map(), payees: new Map(), outbox: [], meta: {} };
+const MAP = { tx: S.tx, acct: S.accounts, cat: S.categories, payee: S.payees };
 let lastN = 0;
 const nextN = () => (lastN = Math.max(lastN + 1, Date.now()));
 
 async function loadAll() {
   db = await openDB();
-  const [meta, accts, cats, txs, outbox] = await Promise.all(['meta', 'accounts', 'categories', 'transactions', 'outbox'].map(idbAll));
+  const [meta, accts, cats, txs, outbox, payees] = await Promise.all(['meta', 'accounts', 'categories', 'transactions', 'outbox', 'payees'].map(idbAll));
   meta.forEach(m => { S.meta[m.k] = m.v; });
   accts.forEach(a => S.accounts.set(a.id, a));
   cats.forEach(c => S.categories.set(c.id, c));
   txs.forEach(t => S.tx.set(t.id, t));
+  payees.forEach(p => S.payees.set(p.id, p));
   S.outbox = outbox.sort((a, b) => a.n - b.n);
   lastN = S.outbox.reduce((m, x) => Math.max(m, x.n), 0);
   if (!S.categories.size && !S.meta.lastSeq) {
@@ -239,6 +243,16 @@ function payeeStats(kind) {
   }
   return [...m.values()];
 }
+
+/* Payee icons: one record per payee name (case-insensitive), with a stable ID so two devices never make duplicates. */
+const normPayee = n => String(n || '').trim().replace(/\s+/g, ' ').toLocaleLowerCase();
+function payeeId(name) {
+  const n = normPayee(name);
+  let h = 0x811c9dc5;
+  for (let i = 0; i < n.length; i++) { h ^= n.charCodeAt(i); h = Math.imul(h, 0x01000193) >>> 0; }
+  return 'pay-' + h.toString(16).padStart(8, '0') + '-' + n.length;
+}
+const payeeLogo = name => { const p = S.payees.get(payeeId(name)); return p ? safeImg(p.logo) : ''; };
 
 /* ───────────── Sync engine ───────────── */
 const inFlight = new Set();
@@ -350,7 +364,7 @@ async function pull(full) {
   const res = await api('pull', { since: full ? 0 : (S.meta.lastSeq || 0) });
   const pending = new Set(S.outbox.map(m => m.entity + '|' + m.record.id));
   const ops = [];
-  const groups = [['acct', res.accounts || []], ['cat', res.categories || []], ['tx', res.transactions || []]];
+  const groups = [['acct', res.accounts || []], ['cat', res.categories || []], ['payee', res.payees || []], ['tx', res.transactions || []]];
   if (res.full) {
     for (const [ent, rows] of groups) {
       ops.push({ store: STORE[ent], clear: true });
@@ -411,7 +425,7 @@ function render() {
   if (view.name === 'account' && !S.accounts.get(view.id)) view = { name: 'home' };
   const html = ({
     home: homeHTML, account: accountHTML, settings: settingsHTML, reports: reportsHTML,
-    reconcile: reconcileHTML, deleted: deletedHTML, categories: categoriesHTML, archived: archivedHTML
+    reconcile: reconcileHTML, deleted: deletedHTML, categories: categoriesHTML, archived: archivedHTML, payees: payeesHTML
   }[view.name] || homeHTML)();
   r.innerHTML = html;
   r.dataset.view = view.name;
@@ -432,6 +446,8 @@ function rerenderData() {
   } else if (['home', 'deleted', 'categories', 'archived', 'reports'].includes(view.name)) {
     const typing = document.activeElement && root().contains(document.activeElement) && /INPUT|SELECT|TEXTAREA/.test(document.activeElement.tagName);
     if (!typing) render();
+  } else if (view.name === 'payees') {
+    const l = $('#payeeList'); if (l) l.innerHTML = payeeListHTML();
   } else if (view.name === 'settings') {
     const s = $('#syncSection');
     if (s && !s.contains(document.activeElement)) s.innerHTML = syncSectionInner();
@@ -591,12 +607,13 @@ function renderLedger() {
   const editingId = draft && draft.id;
   node.innerHTML = shown.map(t => {
     const amt = effect(t, id);
-    const icon = t.type === 'transfer' ? ICON.swap : esc((t.category || t.payee || '?').trim().charAt(0).toUpperCase());
+    const plogo = t.type === 'transfer' ? '' : payeeLogo(t.payee);
+    const icon = t.type === 'transfer' ? ICON.swap : plogo ? `<img src="${esc(plogo)}" alt="">` : esc((t.category || t.payee || '?').trim().charAt(0).toUpperCase());
     const sub = [fmtDate(t.date), t.category && esc(t.category), t.checkNumber && '#' + esc(t.checkNumber), clearedFor(t, id) ? 'Cleared' : 'Outstanding'].filter(Boolean).join(' · ');
     return `<div class="tx ${editingId === t.id ? 'editing' : ''}" data-id="${esc(t.id)}">
       <button class="tx-del" data-act="deleteTx" data-id="${esc(t.id)}" aria-label="Delete">${ICON.trash}</button>
       <div class="tx-body" data-act="editTx" data-id="${esc(t.id)}" role="button" tabindex="0">
-        <span class="tx-icon ${t.type}">${icon}</span>
+        <span class="tx-icon ${t.type}${plogo ? ' logo' : ''}">${icon}</span>
         <span class="tx-main"><strong>${esc(txTitle(t, id))}</strong><small>${sub}${pend.has(t.id) ? ' · <span class="pend" title="Waiting to sync">⏳</span>' : ''}${t.receiptUrl ? ` · <a href="${esc(safeImg(t.receiptUrl) || t.receiptUrl)}" target="_blank" rel="noopener" data-act="noop">Receipt</a>` : ''}</small></span>
         <span class="tx-right"><strong class="${amt > 0 ? 'pos' : 'neg'}">${amt > 0 ? '+' : '−'}${money(Math.abs(amt))}</strong><small>${money(run.get(t.id))}</small></span>
         <button class="tx-del-desk" data-act="deleteTx" data-id="${esc(t.id)}" aria-label="Delete transaction">${ICON.trash}</button>
@@ -675,7 +692,10 @@ function renderTiles() {
     .filter(v => v.name.toLocaleLowerCase() !== q)
     .slice(0, 8);
   node.innerHTML = list.length
-    ? `<p class="tiles-hint">${q ? 'Matching' : 'Frequent'} · tap to fill</p><div class="tiles-row">${list.map(v => `<button type="button" class="tile" data-act="pickPayee" data-name="${esc(v.name)}" data-cat="${esc(v.category)}">${esc(v.name)}</button>`).join('')}</div>`
+    ? `<p class="tiles-hint">${q ? 'Matching' : 'Frequent'} · tap to fill</p><div class="tiles-row">${list.map(v => {
+      const logo = payeeLogo(v.name);
+      return `<button type="button" class="ptile ${logo ? 'has-logo' : ''}" data-act="pickPayee" data-name="${esc(v.name)}" data-cat="${esc(v.category)}" title="${esc(v.name)}" aria-label="${esc(v.name)}">${logo ? `<img src="${esc(logo)}" alt="">` : `<span>${esc(v.name)}</span>`}</button>`;
+    }).join('')}</div>`
     : '';
 }
 function openEntry(mode, id = null) {
@@ -756,11 +776,12 @@ function sheetShell(title, body) {
 }
 function closeSheet(force = false) {
   if (!force) {
-    const dirty = (sheetKind === 'entry' && draft && draft.dirty) || (sheetKind === 'account' && acctDraft && acctDraft.dirty);
+    const dirty = (sheetKind === 'entry' && draft && draft.dirty) || (sheetKind === 'account' && acctDraft && acctDraft.dirty) || (sheetKind === 'payee' && payeeDraft && payeeDraft.dirty);
     if (dirty && !confirm('Discard your unsaved changes?')) { snapSheet(); return false; }
   }
   if (sheetKind === 'entry') draft = null;
   if (sheetKind === 'account') acctDraft = null;
+  if (sheetKind === 'payee') payeeDraft = null;
   sheetKind = null;
   $('#sheetHost').innerHTML = '';
   if (view.name === 'account') renderLedger();
@@ -804,23 +825,91 @@ function acctFormHTML() {
     <label class="field"><span>Starting balance ($) — the bank's balance on the starting date</span><input data-a="opening" type="text" inputmode="decimal" value="${esc(d.opening)}" placeholder="0.00"></label>
     <div class="field"><span>Card color</span><div class="colors"><input type="color" data-a="color" value="${esc(d.color)}" aria-label="Custom color">${COLOR_CHOICES.map(c => `<button type="button" class="swatch ${c === d.color ? 'on' : ''}" style="background:${c}" data-act="pickColor" data-color="${c}" aria-label="Color ${c}"></button>`).join('')}</div></div>
     <div class="field"><span>Institution logo <em>optional</em></span>
-      <div class="logo-row">
-        <div class="logo-prev" style="--card:${esc(d.color)}">${logo ? `<img src="${esc(logo)}" alt="">` : ICON.bank}</div>
-        <div class="logo-btns">
-          <label class="secondary filebtn">Upload<input type="file" accept="image/png,image/jpeg,image/webp" data-act-change="acctLogoFile" hidden></label>
-          <button type="button" class="secondary" data-act="pasteLogo">Paste</button>
-          ${logo ? '<button type="button" class="secondary" data-act="removeLogo">Remove</button>' : ''}
-        </div>
-      </div>
-      <div class="urlrow"><input type="url" inputmode="url" data-a="logoUrl" placeholder="or an https:// image link"><button type="button" class="secondary" data-act="useLogoUrl">Use link</button></div>
-      <div class="pastezone" tabindex="0" data-paste="acct">Or tap here and paste an image</div>
+      ${logoWidgetHTML(logo, `<div class="logo-prev" style="--card:${esc(d.color)}">${logo ? `<img src="${esc(logo)}" alt="">` : ICON.bank}</div>`)}
       <p class="muted small">Logos are shrunk to a small icon and sync to your Sheet with the account.</p>
     </div>
     ${d.id ? `<label class="check"><input type="checkbox" data-a="archived" ${d.archived ? 'checked' : ''}><span>Archive this account (hide it; history is kept)</span></label>` : ''}
     <button type="submit" class="primary">${d.id ? 'Save account' : 'Add account'}</button>
   </form>`;
 }
+function logoWidgetHTML(logo, preview) {
+  return `<div class="logo-row">${preview}
+      <div class="logo-btns">
+        <label class="secondary filebtn">Upload<input type="file" accept="image/png,image/jpeg,image/webp" data-act-change="logoFile" hidden></label>
+        <button type="button" class="secondary" data-act="pasteLogo">Paste</button>
+        ${logo ? '<button type="button" class="secondary" data-act="removeLogo">Remove</button>' : ''}
+      </div>
+    </div>
+    <div class="urlrow"><input type="url" inputmode="url" id="logoUrl" placeholder="or an https:// image link"><button type="button" class="secondary" data-act="useLogoUrl">Use link</button></div>
+    <div class="pastezone" tabindex="0" data-paste="logo">Or tap here and paste an image</div>`;
+}
 function refreshAcctForm() { const b = $('#acctBody'); if (b) b.innerHTML = acctFormHTML(); }
+/** The draft whose logo the open sheet is editing (account or payee). */
+const logoDraft = () => (sheetKind === 'payee' ? payeeDraft : sheetKind === 'account' ? acctDraft : null);
+const refreshLogoForm = () => (sheetKind === 'payee' ? refreshPayeeForm() : refreshAcctForm());
+
+/* ───────────── Payee icons ───────────── */
+let payeeDraft = null;
+let payeeQuery = '';
+function allPayees() {
+  const m = new Map();
+  for (const t of S.tx.values()) {
+    if (t.deletedAt || t.type === 'transfer' || !t.payee) continue;
+    const k = normPayee(t.payee);
+    const v = m.get(k) || { name: t.payee, count: 0 };
+    v.count++; m.set(k, v);
+  }
+  for (const p of S.payees.values()) { const k = normPayee(p.name); if (!m.has(k) && p.logo) m.set(k, { name: p.name, count: 0 }); }
+  return [...m.values()].sort((a, b) => b.count - a.count || a.name.localeCompare(b.name));
+}
+function payeeTileHTML(name, cls = '') {
+  const logo = payeeLogo(name);
+  return `<span class="ptile static ${cls} ${logo ? 'has-logo' : ''}">${logo ? `<img src="${esc(logo)}" alt="">` : `<span>${esc(name)}</span>`}</span>`;
+}
+function payeesHTML() {
+  return `<section class="page">${backBar('Payee icons')}<div class="content">
+    <p class="muted small">Give the places you use most an icon. It shows in the suggestion tiles and next to entries. Payees without an icon show their name.</p>
+    <input class="search" type="search" id="payeeSearch" placeholder="Find or add a payee" value="${esc(payeeQuery)}" aria-label="Find a payee">
+    <div class="panel" id="payeeList" style="margin-top:10px">${payeeListHTML()}</div></div></section>`;
+}
+function payeeListHTML() {
+  const q = normPayee(payeeQuery);
+  const list = allPayees().filter(p => !q || normPayee(p.name).includes(q));
+  const exact = q && list.some(p => normPayee(p.name) === q);
+  return (q && !exact ? `<div class="brandrow">${payeeTileHTML(payeeQuery.trim(), 'small')}<span class="grow"><b>${esc(payeeQuery.trim())}</b><small>New payee</small></span><button class="secondary" data-act="editPayee" data-name="${esc(payeeQuery.trim())}">Add icon</button></div>` : '') +
+    (list.map(p => `<div class="brandrow">${payeeTileHTML(p.name, 'small')}<span class="grow"><b>${esc(p.name)}</b><small>${p.count ? p.count + ' entr' + (p.count === 1 ? 'y' : 'ies') : 'No entries yet'}</small></span>
+      <button class="secondary" data-act="editPayee" data-name="${esc(p.name)}">${payeeLogo(p.name) ? 'Change' : 'Add icon'}</button></div>`).join('') || (q ? '' : '<p class="muted">No payees yet. They appear here after you save entries.</p>'));
+}
+function openPayeeEditor(name) {
+  const p = S.payees.get(payeeId(name));
+  payeeDraft = { name: p ? p.name : name, logo: p ? p.logo || '' : '', dirty: false };
+  sheetKind = 'payee';
+  $('#sheetHost').innerHTML = sheetShell('Payee icon', `<div id="payeeBody">${payeeFormHTML()}</div>`);
+  bindSheetDrag();
+}
+function payeeFormHTML() {
+  const d = payeeDraft;
+  const logo = safeImg(d.logo);
+  return `<form class="entry" data-form="payee" autocomplete="off" novalidate>
+    <div class="payee-hero"><span class="ptile big ${logo ? 'has-logo' : ''}">${logo ? `<img src="${esc(logo)}" alt="">` : `<span>${esc(d.name)}</span>`}</span><b>${esc(d.name)}</b></div>
+    <div class="field"><span>Icon</span>${logoWidgetHTML(logo, '')}</div>
+    <p class="muted small">Square logos look best. Icons are shrunk to a small image and sync to your Sheet.</p>
+    <button type="submit" class="primary">Save icon</button>
+  </form>`;
+}
+function refreshPayeeForm() { const b = $('#payeeBody'); if (b) b.innerHTML = payeeFormHTML(); }
+async function savePayee() {
+  const d = payeeDraft;
+  if (!d) return;
+  const id = payeeId(d.name);
+  const existing = S.payees.get(id);
+  await commit('payee', { ...(existing || {}), id, name: d.name.trim().slice(0, 120), logo: d.logo || '', version: (existing && existing.version) || 0 });
+  payeeDraft = null;
+  closeSheet(true);
+  rerenderData();
+  if (view.name === 'payees') { const l = $('#payeeList'); if (l) l.innerHTML = payeeListHTML(); }
+  toast(d.logo ? 'Icon saved' : 'Icon removed');
+}
 async function saveAccount() {
   const d = acctDraft;
   const opening = d.opening.trim() === '' ? 0 : toCents(d.opening);
@@ -841,8 +930,10 @@ async function saveAccount() {
   else render();
   toast(existing ? 'Account saved' : 'Account added');
 }
-async function setAcctLogoFromFile(file) {
-  try { acctDraft.logo = await shrinkImage(file, 96, 45000); acctDraft.dirty = true; refreshAcctForm(); }
+async function setLogoFromFile(file) {
+  const d = logoDraft();
+  if (!d) return;
+  try { d.logo = await shrinkImage(file, 96, 45000); d.dirty = true; refreshLogoForm(); }
   catch (e) { toast(e.message); }
 }
 function shrinkImage(file, side, maxLen) {
@@ -935,6 +1026,7 @@ function settingsHTML() {
       <div class="panel list">
         <button class="listbtn" data-act="go" data-view="categories">Categories<span>›</span></button>
         <button class="listbtn" data-act="go" data-view="archived">Archived accounts<span>›</span></button>
+        <button class="listbtn" data-act="go" data-view="payees">Payee icons<span>›</span></button>
         <button class="listbtn" data-act="go" data-view="deleted">Recently deleted<span>›</span></button>
       </div>
 
@@ -1084,7 +1176,7 @@ function exportCSV() {
   download('duo-checkbook-' + todayISO() + '.csv', lines.join('\r\n'), 'text/csv;charset=utf-8');
 }
 function exportJSON() {
-  const data = { app: 'Duo Checkbook', version: APP_VERSION, exportedAt: nowISO(), accounts: [...S.accounts.values()], categories: [...S.categories.values()], transactions: [...S.tx.values()], waiting: S.outbox };
+  const data = { app: 'Duo Checkbook', version: APP_VERSION, exportedAt: nowISO(), accounts: [...S.accounts.values()], categories: [...S.categories.values()], payees: [...S.payees.values()], transactions: [...S.tx.values()], waiting: S.outbox };
   download('duo-checkbook-backup-' + todayISO() + '.json', JSON.stringify(data, null, 2), 'application/json');
 }
 
@@ -1116,7 +1208,7 @@ const ACT = {
   go: el => go({ name: el.dataset.view }),
   back() {
     if (['reconcile'].includes(view.name)) return go({ name: 'account', id: view.id });
-    if (['categories', 'archived', 'deleted'].includes(view.name)) return go({ name: 'settings' });
+    if (['categories', 'archived', 'deleted', 'payees'].includes(view.name)) return go({ name: 'settings' });
     if (view.name === 'account' && WIDE_MQ.matches && draft && draft.dirty && !confirm('Discard the entry you were typing?')) return;
     draft = null; go({ name: 'home' });
   },
@@ -1157,7 +1249,8 @@ const ACT = {
     draft = newDraft('expense'); mountEntry($('#entryPanel')); renderLedger();
   },
   closeSheet: () => closeSheet(),
-  saveSheet() { if (sheetKind === 'entry') saveEntry(); else if (sheetKind === 'account') saveAccount(); },
+  saveSheet() { if (sheetKind === 'entry') saveEntry(); else if (sheetKind === 'account') saveAccount(); else if (sheetKind === 'payee') savePayee(); },
+  editPayee: el => openPayeeEditor(el.dataset.name),
   sheetBackdrop: (el, e) => { if (e.target === el) closeSheet(); },
   toggleFilters() { filt.open = !filt.open; $('#filters').classList.toggle('hidden', !filt.open); $('[data-act="toggleFilters"]').classList.toggle('on', filt.open); },
   filterType(el) { filt.type = el.dataset.type; $$('[data-act="filterType"]').forEach(b => b.classList.toggle('on', b === el)); renderLedger(); },
@@ -1167,19 +1260,20 @@ const ACT = {
   reconcile: () => { recon = null; go({ name: 'reconcile', id: view.id }); },
   finishRecon: () => finishRecon(),
   pickColor(el) { acctDraft.color = el.dataset.color; acctDraft.dirty = true; refreshAcctForm(); },
-  removeLogo() { acctDraft.logo = ''; acctDraft.dirty = true; refreshAcctForm(); },
+  removeLogo() { const d = logoDraft(); if (!d) return; d.logo = ''; d.dirty = true; refreshLogoForm(); },
   useLogoUrl() {
-    const v = ($('[data-a="logoUrl"]') || {}).value || '';
+    const d = logoDraft(); if (!d) return;
+    const v = ($('#logoUrl') || {}).value || '';
     const s = safeImg(v.trim());
     if (!s || !s.startsWith('https://')) return toast('Enter an image link that starts with https://');
-    acctDraft.logo = s; acctDraft.dirty = true; refreshAcctForm();
+    d.logo = s; d.dirty = true; refreshLogoForm();
   },
   async pasteLogo() {
     if (!navigator.clipboard || !navigator.clipboard.read) return toast('Tap the paste area below, then paste.');
     try {
       for (const item of await navigator.clipboard.read()) {
         const type = item.types.find(t => /^image\/(png|jpeg|webp)$/.test(t));
-        if (type) return setAcctLogoFromFile(new File([await item.getType(type)], 'logo', { type }));
+        if (type) return setLogoFromFile(new File([await item.getType(type)], 'logo', { type }));
       }
       toast('No image on the clipboard.');
     } catch (e) { toast('Clipboard not available. Use Upload or the paste area.'); }
@@ -1242,6 +1336,7 @@ function wireEvents() {
     const f = e.target.dataset.form;
     if (f === 'entry') saveEntry();
     if (f === 'account') saveAccount();
+    if (f === 'payee') savePayee();
     if (f === 'category') {
       const name = $('#catName').value.trim(), kind = $('#catKind').value;
       if (!name) return;
@@ -1265,6 +1360,8 @@ function wireEvents() {
       acctDraft[el.dataset.a] = el.type === 'checkbox' ? el.checked : el.value;
       acctDraft.dirty = true;
       if (el.dataset.a === 'color' && e.type === 'change') refreshAcctForm();
+    } else if (el.id === 'payeeSearch') {
+      payeeQuery = el.value; const l = $('#payeeList'); if (l) l.innerHTML = payeeListHTML();
     } else if (el.dataset.filter) {
       filt[el.dataset.filter] = el.value; filt.limit = 150; renderLedger();
     } else if (el.dataset.rec && recon) {
@@ -1280,16 +1377,16 @@ function wireEvents() {
   document.addEventListener('change', e => {
     onField(e);
     const el = e.target;
-    if (el.dataset.actChange === 'acctLogoFile' && el.files[0]) setAcctLogoFromFile(el.files[0]);
+    if (el.dataset.actChange === 'logoFile' && el.files[0]) setLogoFromFile(el.files[0]);
     if (el.dataset.actChange === 'appLogoFile' && el.files[0]) {
       shrinkImage(el.files[0], 160, 200000).then(d => setMeta('appLogo', d)).then(() => { render(); toast('Logo saved on this device'); }).catch(err => toast(err.message));
     }
   });
   document.addEventListener('paste', e => {
-    const zone = e.target.closest && e.target.closest('[data-paste="acct"]');
-    if (!zone || !acctDraft) return;
+    const zone = e.target.closest && e.target.closest('[data-paste="logo"]');
+    if (!zone || !logoDraft()) return;
     const item = [...(e.clipboardData && e.clipboardData.items || [])].find(i => /^image\/(png|jpeg|webp)$/.test(i.type));
-    if (item) { e.preventDefault(); setAcctLogoFromFile(item.getAsFile()); }
+    if (item) { e.preventDefault(); setLogoFromFile(item.getAsFile()); }
   });
   bindSwipes();
 
@@ -1364,8 +1461,10 @@ function registerSW() {
     });
     setInterval(() => reg.update().catch(() => {}), 30 * 60000);
   }).catch(() => {});
+  // Reload only when an update replaces a running version, never on the very first install.
+  const hadController = !!navigator.serviceWorker.controller;
   let reloading = false;
-  navigator.serviceWorker.addEventListener('controllerchange', () => { if (!reloading) { reloading = true; location.reload(); } });
+  navigator.serviceWorker.addEventListener('controllerchange', () => { if (hadController && !reloading) { reloading = true; location.reload(); } });
 }
 
 /* ───────────── Boot ───────────── */
