@@ -8,7 +8,7 @@
 
 /* ───────────── Config ───────────── */
 const CFG = window.DUO_CONFIG || { endpoints: {} };
-const APP_VERSION = '2.1.0';
+const APP_VERSION = '2.1.1';
 const API_VERSION = 3;
 const LS = {
   get(k) { try { return localStorage.getItem(k); } catch (e) { return null; } },
@@ -694,7 +694,7 @@ function renderTiles() {
   node.innerHTML = list.length
     ? `<p class="tiles-hint">${q ? 'Matching' : 'Frequent'} · tap to fill</p><div class="tiles-row">${list.map(v => {
       const logo = payeeLogo(v.name);
-      return `<button type="button" class="ptile ${logo ? 'has-logo' : ''}" data-act="pickPayee" data-name="${esc(v.name)}" data-cat="${esc(v.category)}" title="${esc(v.name)}" aria-label="${esc(v.name)}">${logo ? `<img src="${esc(logo)}" alt="">` : `<span>${esc(v.name)}</span>`}</button>`;
+      return `<button type="button" class="ptile ${logo ? 'has-logo' : ''}" data-act="pickPayee" data-name="${esc(v.name)}" data-cat="${esc(v.category)}" title="${esc(v.name)}" aria-label="${esc(v.name)}">${logo ? `<img src="${esc(logo)}" alt=""><em class="pname">${esc(v.name)}</em>` : `<span>${esc(v.name)}</span>`}</button>`;
     }).join('')}</div>`
     : '';
 }
@@ -891,7 +891,7 @@ function payeeFormHTML() {
   const d = payeeDraft;
   const logo = safeImg(d.logo);
   return `<form class="entry" data-form="payee" autocomplete="off" novalidate>
-    <div class="payee-hero"><span class="ptile big ${logo ? 'has-logo' : ''}">${logo ? `<img src="${esc(logo)}" alt="">` : `<span>${esc(d.name)}</span>`}</span><b>${esc(d.name)}</b></div>
+    <div class="payee-hero"><span class="ptile big ${logo ? 'has-logo' : ''}">${logo ? `<img src="${esc(logo)}" alt=""><em class="pname">${esc(d.name)}</em>` : `<span>${esc(d.name)}</span>`}</span><b>${esc(d.name)}</b></div>
     <div class="field"><span>Icon</span>${logoWidgetHTML(logo, '')}</div>
     <p class="muted small">Square logos look best. Icons are shrunk to a small image and sync to your Sheet.</p>
     <button type="submit" class="primary">Save icon</button>
