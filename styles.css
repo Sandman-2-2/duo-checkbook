@@ -163,6 +163,11 @@ code { background: var(--surface-2); padding: 1px 5px; border-radius: 6px; font-
 .sheet-title .confirm { justify-self: end; width: 44px; height: 44px; padding: 10px; border-radius: 50%; background: var(--brand); color: var(--brand-ink);
   box-shadow: 0 4px 12px color-mix(in srgb, var(--brand), transparent 70%); transition: transform .12s; }
 .sheet-title .confirm:active { transform: scale(.92); }
+/* Phones: keep the ✓ clear of the iPhone's floating overlay in the top-right corner */
+@media (max-width: 759px) {
+  .sheet-title { grid-template-columns: 70px 1fr auto; column-gap: 8px; }
+  .sheet-title .confirm { margin-right: 68px; }
+}
 .sheet .entry > button.primary[type="submit"] { display: none; }
 .row2 { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
 .field input, .field select, .field textarea { min-width: 0; max-width: 100%; }

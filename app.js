@@ -8,7 +8,7 @@
 
 /* ───────────── Config ───────────── */
 const CFG = window.DUO_CONFIG || { endpoints: {} };
-const APP_VERSION = '2.1.1';
+const APP_VERSION = '2.1.2';
 const API_VERSION = 3;
 const LS = {
   get(k) { try { return localStorage.getItem(k); } catch (e) { return null; } },
